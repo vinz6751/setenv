@@ -1,5 +1,10 @@
-; Programme pour associer une chaŒne d'environnement personnalis‚e … la
-; variable TOS the_env $4be.
+; Programme pour installer une chaŒne d'environnement personnalis‚e
+; * … la variable TOS the_env $4be
+; * au GEM, via injection dans la basepage
+;
+; La taille maximale est de MAX_ENV_SIZE, elle est faite pour que
+; sur une disquette, ‡a remplisse un cluster de 1024 octets.
+;
 ; Utilisation:
 ; setenv.tos <fichier>
 ;   Charge le fichier fichier comme environnement. Il doit contenir
@@ -13,7 +18,7 @@
 ;   l'environnement depuis le fichier setenv.txt (qui doit se trouver
 ;   dans le r‚pertoire "courant", quoi que cela veuille dire).
 ; 
-; Vinz/MPS, Novembre 2020
+; Vinz/MPS, Janvier 2021
 ; <vincent.barrilliot@laposte.net>
 ; Domaine Publique
 
@@ -85,29 +90,45 @@ Ptermres	MACRO
 ****************************************************
 
 the_env		EQU	$4be ; variable document‚e du TOS
-MAX_ENV_SIZE	EQU	256  ; taille maxi de la chaine d'environnement
+exec_os		EQU	$4fe ; le GEM
+MAX_ENV_SIZE	EQU	564  ; taille maxi de la chaine d'environnement
 
 ****************************************************
-*                 PROGRAMME                        *
+*                 PARTIE RESIDENTE                 *
 ****************************************************
 
 	SECTION TEXT
 start	bra	main
+new_exec_os
+	move.l	4(sp),a0 ; basepage
+	; On r‚‚crit simplement le pointeur vers la chaŒne d'environnement
+	move.l	#env,44(a0)
+	move.l	old_exec_os(pc),a1
+	jmp	(a1)
+old_exec_os	dc.l	0
 env	ds.b	MAX_ENV_SIZE ; c'est ‡a qu'on donnera au TOS
+end
+
+****************************************************
+*               PARTIE NON-RESIDENTE               *
+****************************************************
 
 	EVEN	
-main	; Regarde si un argument est donn‚ en ligne de commande
-	movea.l	4(sp),a5   ; BASEPAGE
+main	movea.l	4(sp),a5   ; BASEPAGE
+	
+	; Message … l'utilisateur
 	move.l	#msg,a6
 	bsr	cconws_a6
-	lea	$80(a5),a5 ; a5:ligne de commande
+
+	; Regarde si un argument est donn‚ en ligne de commande
+	lea	$80(a5),a5 	; a5:ligne de commande
 	moveq	#0,d5
-	move.b	(a5)+,d5 	 ; d5: longueur ligne de commande
+	move.b	(a5)+,d5 	; d5: longueur ligne de commande
 	beq.s	nocmdline
-	clr.b	1(a5,d5)	 ; termine la ligne de commande
+	clr.b	1(a5,d5)	; termine la ligne de commande
 	bra.s	loadenv
 
-nocmdline	; pas de ligne de commande, affiche environnment si existant
+nocmdline ; pas de ligne de commande, affiche environnment si existant
 	; sinon charge depuis setenv.txt
 	bsr	affiche
 	bra.s	abandon
@@ -172,7 +193,7 @@ dernierdejanul
 	suba.l	#start,a2	; a2: octets … garder
 
 	; installe l'environnement
-	Supexec	#instenv
+	Supexec	#installe
 
 	; affiche des informations sur ce qu'on a fait
 	move.l	a5,a6
@@ -182,15 +203,19 @@ dernierdejanul
 	bsr	affiche
 			
 	; garde r‚sident
-	move.l	a2,d2
-	addi.l	#$104,d2 ; taille de la BASEPAGE + bra main
+	move.l	#$100,d2 ; taille de la BASEPAGE
+	add.l	#end,d2
+	sub.l	#start,d2	
 	Ptermres	d2
 
-
-instenv	move.l	#env,the_env.w
-readenv	move.l	the_env.w,d0
+installe
+	move.l	#env,the_env.w
+	move.l	exec_os.w,old_exec_os
+	move.l	#new_exec_os,exec_os
 	rts
 
+readenv	move.l	the_env.w,d0
+	rts
 
 cconws_a6	Cconws	a6
 	rts
