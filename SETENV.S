@@ -3,7 +3,7 @@
 ; * au GEM, via injection dans la basepage
 ;
 ; La taille maximale est de MAX_ENV_SIZE, elle est faite pour que
-; sur une disquette, ‡a remplisse un cluster de 1024 octets.
+; sur une disquette, ‡a s'aligne sur un cluster.
 ;
 ; Utilisation:
 ; setenv.tos <fichier>
@@ -22,7 +22,7 @@
 ; <vincent.barrilliot@laposte.net>
 ; Domaine Publique
 
-	OUTPUT	setenv.prg
+	OUTPUT	c:\auto\setenv.prg
 
 DEBUG	EQU 0
 	IFNE DEBUG
@@ -30,6 +30,13 @@ DEBUG	EQU 0
 	ELSE
 	OPT	D-,S-,X-
 	ENDC
+
+
+****************************************************
+*                 CONFIGURATION                    *
+****************************************************
+
+MAX_ENV_SIZE	EQU	482  ; taille maxi de la chaine d'environnement
 
 
 ****************************************************
@@ -85,13 +92,14 @@ Ptermres	MACRO
 	trap	#1
 	ENDM
 
+
 ****************************************************
 *                 DEFINITIONS                      *
 ****************************************************
 
 the_env		EQU	$4be ; variable document‚e du TOS
 exec_os		EQU	$4fe ; le GEM
-MAX_ENV_SIZE	EQU	564  ; taille maxi de la chaine d'environnement
+
 
 ****************************************************
 *                 PARTIE RESIDENTE                 *
@@ -108,6 +116,7 @@ new_exec_os
 old_exec_os	dc.l	0
 env	ds.b	MAX_ENV_SIZE ; c'est ‡a qu'on donnera au TOS
 end
+
 
 ****************************************************
 *               PARTIE NON-RESIDENTE               *
@@ -151,7 +160,7 @@ affiche	; afficher l'environnement point‚ par $4be
 	rts	
 	
 	
-loaddefaultenv
+loaddefaultenv ; charge l'environnement depuis "setenv.txt"
 	move.l	#envtxt,a5
 loadenv	; Charge l'environement depuis le fichier dont le nom est en a5
 	; Ouvre le fichier
@@ -165,9 +174,24 @@ loadenv	; Charge l'environement depuis le fichier dont le nom est en a5
 abandon	Pterm0
 
 ouvert	; le fichier est ouvert, lit le contenu
+	move.w	d0,handle
 	Fread	d0,#MAX_ENV_SIZE,env
 	move.w	d0,d7	; d7: longueur du fichier
-	Fclose	d0
+	; si on a lu MAX_ENV_SIZE octets, il se peut que le fichier
+	; soit trop grand pour notre buffer. Test et abandonne si c'est
+	; le cas.
+	cmpi.w	#MAX_ENV_SIZE,d0
+	bne.s	parse
+	Fread	handle(pc),#1,tstlong
+	tst.w	d0
+	beq.s	parse
+	lea	envtxt,a6
+	bsr	cconws_a6
+	lea	msgtroplong,a6
+	bsr	cconws_a6
+	clr.w	d7 ; force l'abandon (voir ci-dessous)
+
+parse	Fclose	d0
 	tst.w	d7
 	beq.s	abandon ; si le fichier est vide on ne fait rien
 	; remplace les crlf par des octets nuls
@@ -227,3 +251,9 @@ failed	dc.b	"non trouv‚ !"
 crlf	dc.b	$a,$d,0
 msg	dc.b	27,"pSETENV 1.0",$a,$d,27,"q",0
 msgcharge	dc.b	" charg‚.",$a,$d,0
+msgtroplong	dc.b	" trop long !",$a,$d,0
+
+	SECTION BSS
+	EVEN
+handle	ds.w	1	; handle du fichier … charger
+tstlong	ds.b	1	; buffer bidon pour voir si fichier trop long
