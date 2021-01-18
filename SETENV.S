@@ -22,7 +22,7 @@
 ; <vincent.barrilliot@laposte.net>
 ; Domaine Publique
 
-	OUTPUT	c:\auto\setenv.prg
+	OUTPUT	setenv.prg
 
 DEBUG	EQU 0
 	IFNE DEBUG
@@ -36,7 +36,7 @@ DEBUG	EQU 0
 *                 CONFIGURATION                    *
 ****************************************************
 
-MAX_ENV_SIZE	EQU	482  ; taille maxi de la chaine d'environnement
+MAX_ENV_SIZE EQU 482  ; taille maxi de la chaine d'environnement
 
 
 ****************************************************
@@ -97,8 +97,8 @@ Ptermres	MACRO
 *                 DEFINITIONS                      *
 ****************************************************
 
-the_env		EQU	$4be ; variable document‚e du TOS
-exec_os		EQU	$4fe ; le GEM
+the_env	EQU $4be	; variable document‚e du TOS
+exec_os	EQU $4fe	; le GEM
 
 
 ****************************************************
