@@ -4,8 +4,8 @@ It works the following way:
 * With filename provided on as command line argument:
   Set the the_env TOS environment to the content of the file. The file must look like
   ```
-  MYVAR1=myvalue<cr>c<lf>
-  MYVAR2=myvalue<cr>c<lf>
+  MYVAR1=myvalue<cr><lf>
+  MYVAR2=myvalue<cr><lf>
   ```
   It will display the newly set environment before exiting.
 * Without argument:
