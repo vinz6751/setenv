@@ -126,7 +126,7 @@ end
 main	movea.l	4(sp),a5   ; BASEPAGE
 	
 	; Message … l'utilisateur
-	move.l	#msg,a6
+	lea	msg,a6
 	bsr	cconws_a6
 
 	; Regarde si un argument est donn‚ en ligne de commande
@@ -150,7 +150,7 @@ affiche	; afficher l'environnement point‚ par $4be
 	movea.l	a3,a4
 .boucle	tst.b	(a4)+	; cherche fin de la chaine
 	bne.s	.boucle
-	move.l	a3,a6
+	movea.l	a3,a6
 	bsr	cconws_a6
 	move.l	#crlf,a6
 	bsr	cconws_a6
@@ -161,7 +161,7 @@ affiche	; afficher l'environnement point‚ par $4be
 	
 	
 loaddefaultenv ; charge l'environnement depuis "setenv.txt"
-	move.l	#envtxt,a5
+	lea	envtxt,a5
 loadenv	; Charge l'environement depuis le fichier dont le nom est en a5
 	; Ouvre le fichier
 	Fopen	a5,#1	; ouvre fichier texte en lecture seule
@@ -169,7 +169,7 @@ loadenv	; Charge l'environement depuis le fichier dont le nom est en a5
 	bpl.s	ouvert
 	; fichier pas trouv‚
 	move.b	#' ',separat ; adapte la chaŒne pour la sortie
-	move.l	#envtxt,a6
+	lea	envtxt,a6
 	bsr	cconws_a6
 abandon	Pterm0
 
@@ -220,9 +220,9 @@ dernierdejanul
 	Supexec	#installe
 
 	; affiche des informations sur ce qu'on a fait
-	move.l	a5,a6
+	movea.l	a5,a6
 	bsr	cconws_a6
-	move.l	#msgcharge,a6
+	lea	msgcharge,a6
 	bsr	cconws_a6
 	bsr	affiche
 			
