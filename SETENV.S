@@ -1,24 +1,18 @@
 ; Programme pour installer une chaŒne d'environnement personnalis‚e
 ; * … la variable TOS the_env $4be
-; * au GEM, via injection dans la basepage
-;
-; La taille maximale est de MAX_ENV_SIZE, elle est faite pour que
-; sur une disquette, ‡a s'aligne sur un cluster.
-;
+; * au GEM, via injection dans la basepage du programme appel‚ par
+;   le bios via exec_os
+;;
 ; Utilisation:
-; setenv.tos <fichier>
+; setenv.prg <fichier>
 ;   Charge le fichier fichier comme environnement. Il doit contenir
-;   une ligne par variable, formatt‚ VARIABLE=VALEUR\r\n et se terminer
-;   par une ligne vide.
+;   une ligne par variable, formatt‚ VARIABLE=VALEUR\r\n.
 ;
-; setenv.tos
-;   Affiche l'environnement sp‚cifi‚ par la variable "the_env", avec
-;   retour chariot … la fin de chaque variable.
-;   Si la variable ne contient aucun environnement, charge
-;   l'environnement depuis le fichier setenv.txt (qui doit se trouver
-;   dans le r‚pertoire "courant", quoi que cela veuille dire).
-; 
-; Vinz/MPS, Janvier 2021
+; setenv.prg
+;   Charge l'environnement depuis le fichier setenv.txt (qui doit se
+;   trouver dans le r‚pertoire "courant", quoi que cela veuille dire).
+;
+; Vinz/MPS, Mars 2021
 ; <vincent.barrilliot@laposte.net>
 ; Domaine Publique
 
@@ -30,13 +24,6 @@ DEBUG	EQU 0
 	ELSE
 	OPT	D-,S-,X-
 	ENDC
-
-
-****************************************************
-*                 CONFIGURATION                    *
-****************************************************
-
-MAX_ENV_SIZE EQU 482  ; taille maxi de la chaine d'environnement
 
 
 ****************************************************
@@ -107,15 +94,76 @@ exec_os	EQU $4fe	; le GEM
 
 	SECTION TEXT
 start	bra	main
-new_exec_os
+
+handle	dc.l	1	; handle du fichier … charger
+msgcharge	dc.b	" charg‚!",$a,$d,0
+msgvide	dc.b	" vide!"
+crlf	dc.b	$a,$d,0
+	EVEN
+
+
+cconws_a6	; affiche la chaŒne en a6
+	Cconws	a6
+	rts
+
+	
+lit	; partie … garder pour ne pas que ‡a se chie dessus
+	; A partir du moment o— arrive ici, il faut consid‚rer que
+	; tout ce qui est aprŠs "env" est effac‚
+	trap	#1	; Fread
+	lea	12(sp),sp
+	move.w	d0,d7	; d7: longueur du fichier
+	Fclose	handle
+	tst.w	d7
+	bne.s	pasvide
+vide	lea	msgvide,a6
+	bsr	cconws_a6
+abandon	Pterm0		; si le fichier est vide, on en fait rien
+
+pasvide		
+adapt	; r‚‚crit l'environnement en rempla‡ant les CR par 
+	lea	env,a1	; a1: tˆte de lecture
+	movea.l	a1,a2	; a2: tˆte d'‚criture
+	move.w	d7,d1
+	subq.w	#1,d7 	; pour le dbra sur la longueur du fichier
+.boucle	move.b	(a1)+,d3
+	cmpi.b	#$0d,d3	; CR: on les ignore (en ne les copiant pas)
+	beq.s	.ignore
+	cmpi.b	#$0a,d3	; LF 
+	bne.s	.paslf
+	clr.b	d3	; remplace LF par nul
+.paslf	move.b	d3,(a2)+
+.ignore	dbra	d7,.boucle
+	clr.b	(a2)+	; ajoute 2 nulls … la fin pour ˆtre sur
+	clr.b	(a2)
+	suba.l	#start,a2	; a2: octets … garder
+	move.l	a2,d3
+	add.l	#$100,d3	; d3: taille totale … garder (inclus BASEPAGE)
+
+	; installe l'environnement
+	Supexec	#installe
+			
+	; garde r‚sident
+	Ptermres	d3
+
+
+installe	; installe le nouveau vecteur exec_os (en superviseur)
+	move.l	#env,the_env.w
+	move.l	exec_os.w,oldexecos
+	move.l	#mon_exec_os,exec_os
+	rts
+	
+
+	dc.b	'XBRA'
+	dc.b	'SENV'
+oldexecos	dc.l	0
+mon_exec_os ; nouveau vecteur exec_os
 	move.l	4(sp),a0 ; basepage
-	; On r‚‚crit simplement le pointeur vers la chaŒne d'environnement
-	move.l	#env,44(a0)
-	move.l	old_exec_os(pc),a1
-	jmp	(a1)
-old_exec_os	dc.l	0
-env	ds.b	MAX_ENV_SIZE ; c'est ‡a qu'on donnera au TOS
-end
+	move.l	#env,44(a0) 	; injecte la chaŒne d'environnement
+	move.l	oldexecos(pc),-(sp) ; puis lance l'AES
+	rts
+	
+env	; Les donn‚es lues du fichier aterrissent ici
 
 
 ****************************************************
@@ -125,135 +173,42 @@ end
 	EVEN	
 main	movea.l	4(sp),a5   ; BASEPAGE
 	
-	; Message … l'utilisateur
+	; on s'annonce … l'utilisateur
 	lea	msg,a6
 	bsr	cconws_a6
 
-	; Regarde si un argument est donn‚ en ligne de commande
-	lea	$80(a5),a5 	; a5:ligne de commande
-	moveq	#0,d5
-	move.b	(a5)+,d5 	; d5: longueur ligne de commande
-	beq.s	nocmdline
-	clr.b	1(a5,d5)	; termine la ligne de commande
+	; regarde si un fichier est donn‚ en ligne de commande
+	lea	$80(a5),a5 ; a5:ligne de commande
+	move.b	(a5)+,d5 	 ; d5: longueur ligne de commande
+	ext.w	d5
+	beq.s	loaddefaultenv
+	clr.b	1(a5,d5)	 ; termine la ligne de commande
 	bra.s	loadenv
-
-nocmdline ; pas de ligne de commande, affiche environnment si existant
-	; sinon charge depuis setenv.txt
-	bsr	affiche
-	bra.s	abandon
-	
-affiche	; afficher l'environnement point‚ par $4be
-	Supexec	#readenv
-	tst.l	d0
-	beq.s	loaddefaultenv  ; pas d'environnement, on va charger le notre
-	movea.l	d0,a3
-	movea.l	a3,a4
-.boucle	tst.b	(a4)+	; cherche fin de la chaine
-	bne.s	.boucle
-	movea.l	a3,a6
-	bsr	cconws_a6
-	move.l	#crlf,a6
-	bsr	cconws_a6
-	movea.l	a4,a3
-	tst.b	(a3)	; deuxiŠme null = fin
-	bne.s	.boucle
-	rts	
-	
 	
 loaddefaultenv ; charge l'environnement depuis "setenv.txt"
 	lea	envtxt,a5
-loadenv	; Charge l'environement depuis le fichier dont le nom est en a5
-	; Ouvre le fichier
-	Fopen	a5,#1	; ouvre fichier texte en lecture seule
-	tst.w	d0
+loadenv	; charge l'environnement depuis le fichier dont le nom est en a5
+	movea.l	a5,a6
+	bsr	cconws_a6	   ; affiche non du fichier, on ajoutera "charg‚" ou "pas trouv‚" plus tard	
+	lea	crlf,a6
+	bsr	cconws_a6
+	Fopen	a5,#1	   ; ouvre fichier texte en lecture seule
+	move.w	d0,handle
 	bpl.s	ouvert
 	; fichier pas trouv‚
-	move.b	#' ',separat ; adapte la chaŒne pour la sortie
-	lea	envtxt,a6
+	lea	notfndmsg,a6
 	bsr	cconws_a6
-abandon	Pterm0
-
-ouvert	; le fichier est ouvert, lit le contenu
-	move.w	d0,handle
-	Fread	d0,#MAX_ENV_SIZE,env
-	move.w	d0,d7	; d7: longueur du fichier
-	; si on a lu MAX_ENV_SIZE octets, il se peut que le fichier
-	; soit trop grand pour notre buffer. Test et abandonne si c'est
-	; le cas.
-	cmpi.w	#MAX_ENV_SIZE,d0
-	bne.s	parse
-	Fread	handle(pc),#1,tstlong
-	tst.w	d0
-	beq.s	parse
-	lea	envtxt,a6
-	bsr	cconws_a6
-	lea	msgtroplong,a6
-	bsr	cconws_a6
-	clr.w	d7 ; force l'abandon (voir ci-dessous)
-
-parse	Fclose	d0
-	tst.w	d7
-	beq.s	abandon ; si le fichier est vide on ne fait rien
-	; remplace les crlf par des octets nuls
-	lea	env,a1
-	movea.l	a1,a2
-	move.w	d7,d1
-	subq.w	#1,d7 ; pour le dbra
-boucle	move.b	(a1)+,d2
-	cmpi.b	#$a,d2
-	beq.s	ignore
-	cmpi.b	#$d,d2
-	bne.s	paslf
-	clr.b	d2
-paslf	move.b	d2,(a2)+
-ignore	dbra	d7,boucle
-	; assure que le dernier ‚tait termin‚ par null
-	tst.b	d2	
-	beq.s	dernierdejanul
-	clr.b	(a2)+
-dernierdejanul
-	; ajoute le null final (pour avoir double null)
-	clr.b	(a2)+
-	suba.l	#start,a2	; a2: octets … garder
-
-	; installe l'environnement
-	Supexec	#installe
-
-	; affiche des informations sur ce qu'on a fait
-	movea.l	a5,a6
-	bsr	cconws_a6
-	lea	msgcharge,a6
-	bsr	cconws_a6
-	bsr	affiche
-			
-	; garde r‚sident
-	move.l	#$100,d2 ; taille de la BASEPAGE
-	add.l	#end,d2
-	sub.l	#start,d2	
-	Ptermres	d2
-
-installe
-	move.l	#env,the_env.w
-	move.l	exec_os.w,old_exec_os
-	move.l	#new_exec_os,exec_os
-	rts
-
-readenv	move.l	the_env.w,d0
-	rts
-
-cconws_a6	Cconws	a6
-	rts
+	bra	abandon
+notfndmsg	dc.b	" non trouv‚ !",$a,$d,0
+ouvert	; le fichier est ouvert, lit le contenu (64Ko max, plus qu'il n'en faut)
+	pea	env
+	move.l	#$ffff,-(sp) ; on met tout ce qu'on peut du Fread ici et le trap en r‚sident
+	move.w	d0,-(sp)
+	move.w	#63,-(sp)
+	bra	lit	
+	; … partir de ce moment, tout ce qui est aprŠs "env" est
+	; potentiellement r‚‚crit !
 	
 	SECTION DATA
-envtxt	dc.b	"setenv.txt"
-separat	dc.b	0
-failed	dc.b	"non trouv‚ !"
-crlf	dc.b	$a,$d,0
+envtxt	dc.b	"setenv.txt",0
 msg	dc.b	27,"pSETENV 1.0",$a,$d,27,"q",0
-msgcharge	dc.b	" charg‚.",$a,$d,0
-msgtroplong	dc.b	" trop long !",$a,$d,0
-
-	SECTION BSS
-	EVEN
-handle	ds.w	1	; handle du fichier … charger
-tstlong	ds.b	1	; buffer bidon pour voir si fichier trop long
